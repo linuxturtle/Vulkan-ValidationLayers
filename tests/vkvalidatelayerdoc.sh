@@ -1,9 +1,6 @@
 #!/bin/bash
 #set -x
 
-# temp workaround to let Travis finish - validation_stats script needs re-work
-exit 0
-
 if [ -t 1 ] ; then
     RED='\033[0;31m'
     GREEN='\033[0;32m'
@@ -31,15 +28,12 @@ python3 vk_validation_stats.py
 
 RES=$?
 
-
 if [ $RES -eq 0 ] ; then
    printf "$GREEN[  PASSED  ]$NC 1 test\n"
-   exit 0
-else
-   printf "$RED[  FAILED  ]$NC Validation of vk_validation_error_database.txt failed\n"
-   printf "$RED[  FAILED  ]$NC 1 test\n"
-   printf "1 TEST FAILED\n"
-   exit 1
+else # Warn but don't fail on validation_status script'
+   printf "$RED[  WARN  ]$NC Validation statistics script vk_validation_stats.py terminated abnormally.\n"
+   printf "$RED[  WARN  ]$NC 1 test\n"
 fi
 # Restore original directory
 popd
+exit 0

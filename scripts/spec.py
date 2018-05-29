@@ -33,9 +33,9 @@ gen_db = False # set to True when '-gendb <filename>' option provided
 json_compare = False # compare existing DB to json file input
 # This is the root spec link that is used in error messages to point users to spec sections
 #old_spec_url = "https://www.khronos.org/registry/vulkan/specs/1.0/xhtml/vkspec.html"
-spec_url = "https://www.khronos.org/registry/vulkan/specs/1.0-extensions/html/vkspec.html"
-core_url = "https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html"
-ext_url = "https://www.khronos.org/registry/vulkan/specs/1.0-extensions/html/vkspec.html"
+spec_url = "https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html"
+core_url = "https://www.khronos.org/registry/vulkan/specs/1.1/html/vkspec.html"
+ext_url =  "https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html"
 # After the custom validation error message, this is the prefix for the standard message that includes the
 #  spec valid usage language as well as the link to nearest section of spec to that language
 error_msg_prefix = "The spec valid usage text states "
