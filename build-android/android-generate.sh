@@ -21,18 +21,42 @@ cd $dir
 rm -rf generated
 mkdir -p generated/include generated/common
 
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_safe_struct.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_safe_struct.cpp )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_enum_string_helper.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_object_types.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_dispatch_table_helper.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml thread_check.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml parameter_validation.cpp )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml unique_objects_wrappers.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_layer_dispatch_table.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_extension_helper.h )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml object_tracker.cpp )
-( cd generated/include; python3 ../../../scripts/lvl_genvk.py -registry ../../../Vulkan-Headers/registry/vk.xml vk_typemap_helper.h )
+# Try to find Vulkan-Headers from known paths, then parse from arg
+REGISTRY=empty
+SUBMODULE=../Vulkan-Headers/registry
+PEER=../../Vulkan-Headers/registry
+
+if [[ -d $SUBMODULE ]]; then
+    REGISTRY=$(realpath $SUBMODULE)
+    echo Found submodule version of Vulkan-Headers registry.
+elif [[ -d $PEER ]]; then
+    REGISTRY=$(realpath $PEER)
+    echo Found peer version of Vulkan-Headers registry.
+elif [[ -d "$1" ]]; then
+    REGISTRY=$(realpath "$1")
+    echo Attempting to use first parameter as Vulkan-Headers registry path.
+else
+    echo No Vulkan-Headers registry found.
+    exit
+fi
+
+echo Using $REGISTRY to generate files...
+( cd generated/include
+  # Pass the selected registry to lvl_genvk.py via env
+  export REGISTRY_PATH=$REGISTRY;
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_safe_struct.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_safe_struct.cpp
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_enum_string_helper.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_object_types.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_dispatch_table_helper.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml thread_check.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml parameter_validation.cpp
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml unique_objects_wrappers.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_layer_dispatch_table.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_extension_helper.h
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml object_tracker.cpp
+  python3 ../../../scripts/lvl_genvk.py -registry $REGISTRY/vk.xml vk_typemap_helper.h
+)
 
 SPIRV_TOOLS_PATH=../../third_party/shaderc/third_party/spirv-tools
 SPIRV_TOOLS_UUID=spirv_tools_uuid.txt
