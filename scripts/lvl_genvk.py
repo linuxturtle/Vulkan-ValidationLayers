@@ -16,7 +16,10 @@
 
 import argparse, cProfile, pdb, string, sys, time, os
 scripts_directory_path = os.path.dirname(os.path.abspath(__file__))
-registry_headers_path = os.path.join(scripts_directory_path, '../Vulkan-Headers/registry')
+
+# regitry path needs to be flexible and found before main
+registry_path_env_var = os.getenv('REGISTRY_PATH', '../Vulkan-Headers/registry')
+registry_headers_path = os.path.join(scripts_directory_path, registry_path_env_var)
 sys.path.insert(0, registry_headers_path)
 
 from reg import *
