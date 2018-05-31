@@ -56,6 +56,8 @@ before_install:
       export ANDROID_NDK_HOME=`pwd`/android-ndk-r15c
       export JAVA_HOME="/usr/lib/jvm/java-8-oracle"
       export PATH="$ANDROID_NDK_HOME:$PATH"
+      # Add Linux packages
+      sudo apt-get -y install realpath
     fi
   - |
     if [[ "$CHECK_FORMAT" == "ON" && "$TRAVIS_PULL_REQUEST" != "false" ]]; then
