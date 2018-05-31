@@ -117,6 +117,9 @@ LOCAL_LDFLAGS   += -Wl,-Bsymbolic
 LOCAL_LDFLAGS   += -Wl,--exclude-libs,ALL
 include $(BUILD_SHARED_LIBRARY)
 
+# Allow test build to be skipped since it relies on external files (for now)
+ifneq ($(SKIP_TESTS),true)
+
 include $(CLEAR_VARS)
 LOCAL_MODULE := VkLayerValidationTests
 LOCAL_SRC_FILES += $(SRC_DIR)/tests/layer_validation_tests.cpp \
@@ -159,6 +162,8 @@ LOCAL_WHOLE_STATIC_LIBRARIES += android_native_app_glue
 LOCAL_LDLIBS := -llog -landroid
 LOCAL_LDFLAGS := -u ANativeActivity_onCreate
 include $(BUILD_SHARED_LIBRARY)
+
+endif # SKIP_TESTS
 
 $(call import-module,android/native_app_glue)
 $(call import-module,third_party/googletest)
