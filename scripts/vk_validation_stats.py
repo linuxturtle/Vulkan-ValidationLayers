@@ -52,7 +52,17 @@ import json
 #  3. Update test code to check if tests use unique VUID strings to check for errors instead of partial 
 #     error message strings
 
-db_file = '../layers/vk_validation_error_database.txt'
+verbose_mode = False
+txt_db = False
+csv_db = False
+txt_db_filename = "vk_validation_error_database.txt"
+csv_db_filename = "vk_validation_error_database.csv"
+header_file = '../layers/vk_validation_error_messages.h'
+test_file = '../tests/layer_validation_tests.cpp'
+json_filename = ""
+vuid_prefixes = ['"VUID-', '"UNASSIGNED-']
+
+
 generated_layer_source_directories = [
 'build',
 'dbuild',
@@ -70,87 +80,101 @@ layer_source_files = [
 '../layers/shader_validation.cpp',
 '../layers/buffer_validation.cpp',
 ]
-header_file = '../layers/vk_validation_error_messages.h'
-json_file = '../Vulkan-Headers/registry/validusage.json'
-# TODO : Don't hardcode linux path format if we want this to run on windows
-test_file = '../tests/layer_validation_tests.cpp'
+
+def printHelp():
+    print ("Usage: python vk_validation_stats.py -json-file <json_file>")
+    print ("                                     [-textdb [<text_database_filename>]]")
+    print ("                                     [-cvsdb [<cvs_database_filename>]]")
+    print ("                                     [-verbose]")
+    print ("                                     [-help]")
+    print (" The vk_validation_stats parses validation layer source files to determine the")
+    print (" set of valid usage checks and tests currently implemented, and generates")
+    print (" coverage values by comparing against the full set of valid usage identifiers")
+    print (" found in the Vulkan-Headers registry file 'validusate.json'")
+    print ("Arguments: ")
+    print (" '-json-file' (required) locatation of registry file 'validusage.json'")
+    print (" '-textdb'    output the error database text to <text_database_filename>,")
+    print ("              defaults to 'vk_validation_error_database.txt'")
+    print (" '-cvsdb'     output the error database in csv to <csv_database_filename>,")
+    print ("              defaults to 'vk_validation_error_database.csv'")
+    print (" '-verbose'   show your work (to stdout)")
 
 # List of vuids that are allowed to be used more than once so don't warn on their duplicates
 duplicate_exceptions = [
-'"VUID-vkDestroyInstance-instance-00629"', # This covers the broad case that all child objects must be destroyed at DestroyInstance time
-'"VUID-vkDestroyDevice-device-00378"', # This covers the broad case that all child objects must be destroyed at DestroyDevice time
-'"VUID-VkCommandBufferBeginInfo-flags-00055"', # Obj tracker check makes sure non-null framebuffer is valid & CV check makes sure it's compatible w/ renderpass framebuffer
-'"VUID-VkRenderPassCreateInfo-attachment-00833"', # This is an aliasing error that we report twice, for each of the two allocations that are aliasing
-'"VUID-VkPipelineShaderStageCreateInfo-module-parameter"', # Covers valid shader module handle for both Compute & Graphics pipelines
-'"VUID-VkMappedMemoryRange-memory-parameter"', # This is a case for VkMappedMemoryRange struct that is used by both Flush & Invalidate MappedMemoryRange
-'"VUID-VkImageSubresource-aspectMask-parameter"', # This is a blanket case for all invalid image aspect bit errors. The spec link has appropriate details for all separate cases.
-'"VUID-VkWriteDescriptorSet-descriptorType-00325"', # This is a descriptor set write update error that we use for a couple copy cases as well
-'"VUID-vkCmdClearColorImage-image-00007"', # Handles both depth/stencil & compressed image errors for vkCmdClearColorImage()
-'"VUID-vkCmdSetScissor-x-00595"', # Used for both x & y value of scissors to make sure they're not negative
-'"VUID-VkSwapchainCreateInfoKHR-surface-parameter"', # Surface of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
-'"VUID-VkSwapchainCreateInfoKHR-oldSwapchain-parameter"', # oldSwapchain of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
-'"VUID-VkSwapchainCreateInfoKHR-imageFormat-01273"', # Single error for both imageFormat & imageColorSpace requirements when creating swapchain
-'"VUID-VkWriteDescriptorSet-descriptorType-00330"', # Used twice for the same error codepath as both a param & to set a variable, so not really a duplicate
+#'"VUID-vkDestroyInstance-instance-00629"', # This covers the broad case that all child objects must be destroyed at DestroyInstance time
+#'"VUID-vkDestroyDevice-device-00378"', # This covers the broad case that all child objects must be destroyed at DestroyDevice time
+#'"VUID-VkCommandBufferBeginInfo-flags-00055"', # Obj tracker check makes sure non-null framebuffer is valid & CV check makes sure it's compatible w/ renderpass framebuffer
+#'"VUID-VkRenderPassCreateInfo-attachment-00833"', # This is an aliasing error that we report twice, for each of the two allocations that are aliasing
+#'"VUID-VkPipelineShaderStageCreateInfo-module-parameter"', # Covers valid shader module handle for both Compute & Graphics pipelines
+#'"VUID-VkMappedMemoryRange-memory-parameter"', # This is a case for VkMappedMemoryRange struct that is used by both Flush & Invalidate MappedMemoryRange
+#'"VUID-VkImageSubresource-aspectMask-parameter"', # This is a blanket case for all invalid image aspect bit errors. The spec link has appropriate details for all separate cases.
+#'"VUID-VkWriteDescriptorSet-descriptorType-00325"', # This is a descriptor set write update error that we use for a couple copy cases as well
+#'"VUID-vkCmdClearColorImage-image-00007"', # Handles both depth/stencil & compressed image errors for vkCmdClearColorImage()
+#'"VUID-vkCmdSetScissor-x-00595"', # Used for both x & y value of scissors to make sure they're not negative
+#'"VUID-VkSwapchainCreateInfoKHR-surface-parameter"', # Surface of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
+#'"VUID-VkSwapchainCreateInfoKHR-oldSwapchain-parameter"', # oldSwapchain of VkSwapchainCreateInfoKHR must be valid when creating both single or shared swapchains
+#'"VUID-VkSwapchainCreateInfoKHR-imageFormat-01273"', # Single error for both imageFormat & imageColorSpace requirements when creating swapchain
+#'"VUID-VkWriteDescriptorSet-descriptorType-00330"', # Used twice for the same error codepath as both a param & to set a variable, so not really a duplicate
 ]
 
-class ValidationDatabase:
-    def __init__(self, filename=db_file):
-        self.db_file = filename
-        self.delimiter = '~^~'
-        self.db_dict = {} # complete dict of all db values per error vuid
-        # specialized data structs with slices of complete dict
-        self.db_vuid_to_tests = {}              # dict where vuid is key to lookup list of tests implementing the vuid
-        self.db_implemented_vuids = set()       # set of all error vuids claiming to be implemented in database file
-        self.db_unimplemented_implicit = set()  # set of all implicit checks that aren't marked implemented
-        self.db_invalid_implemented = set()     # set of checks with invalid check_implemented flags
-    def read(self, verbose):
-        """Read a database file into internal data structures, format of each line is <error_enum><check_implemented><testname><api><vuid_string><core|ext><errormsg><note>"""
-        with open(self.db_file, "r", encoding="utf8") as infile:
-            for line in infile:
-                line = line.strip()
-                if line.startswith('#') or '' == line:
-                    continue
-                db_line = line.split(self.delimiter)
-                if len(db_line) != 8:
-                    print("ERROR: Bad database line doesn't have 8 elements: %s" % (line))
-                error_enum = db_line[0]
-                implemented = db_line[1]
-                testname = db_line[2]
-                api = db_line[3]
-                vuid_string = db_line[4]
-                core_ext = db_line[5]
-                error_str = db_line[6]
-                note = db_line[7]
-                # Read complete database contents into our class var for later use
-                self.db_dict[vuid_string] = {}
-                self.db_dict[vuid_string]['error_enum'] = error_enum
-                self.db_dict[vuid_string]['check_implemented'] = implemented
-                self.db_dict[vuid_string]['testname'] = testname
-                self.db_dict[vuid_string]['api'] = api
-                # self.db_dict[vuid_string]['vuid_string'] = vuid_string
-                self.db_dict[vuid_string]['core_ext'] = core_ext
-                self.db_dict[vuid_string]['error_string'] = error_str
-                self.db_dict[vuid_string]['note'] = note
-                # Now build custom data structs
-                if 'Y' == implemented:
-                    self.db_implemented_vuids.add(vuid_string)
-                elif 'implicit' in note: # only make note of non-implemented implicit checks
-                    self.db_unimplemented_implicit.add(vuid_string)
-                if implemented not in ['Y', 'N']:
-                    self.db_invalid_implemented.add(vuid_string)
-                if testname.lower() not in ['unknown', 'none', 'nottestable']:
-                    self.db_vuid_to_tests[vuid_string] = testname.split(',')
-                    #if len(self.db_vuid_to_tests[error_enum]) > 1:
-                    #    print "Found check %s that has multiple tests: %s" % (error_enum, self.db_vuid_to_tests[error_enum])
-                    #else:
-                    #    print "Check %s has single test: %s" % (error_enum, self.db_vuid_to_tests[error_enum])
-                #unique_id = int(db_line[0].split('_')[-1])
-                #if unique_id > max_id:
-                #    max_id = unique_id
-        if verbose:
-            print("Found %d total VUIDs in database" % (len(self.db_dict.keys())))
-            print("Found %d VUIDs in database marked as mplemented" % (len(self.db_implemented_vuids)))
-            print("Found %d VUIDs in database marked as having a test implemented" % (len(self.db_vuid_to_tests.keys())))
+#class ValidationDatabase:
+#    def __init__(self, filename=db_file):
+#        self.db_file = filename
+#        self.delimiter = '~^~'
+#        self.db_dict = {} # complete dict of all db values per error vuid
+#        # specialized data structs with slices of complete dict
+#        self.db_vuid_to_tests = {}              # dict where vuid is key to lookup list of tests implementing the vuid
+#        self.db_implemented_vuids = set()       # set of all error vuids claiming to be implemented in database file
+#        self.db_unimplemented_implicit = set()  # set of all implicit checks that aren't marked implemented
+#        self.db_invalid_implemented = set()     # set of checks with invalid check_implemented flags
+#    def read(self, verbose):
+#        """Read a database file into internal data structures, format of each line is <error_enum><check_implemented><testname><api><vuid_string><core|ext><errormsg><note>"""
+#        with open(self.db_file, "r", encoding="utf8") as infile:
+#            for line in infile:
+#                line = line.strip()
+#                if line.startswith('#') or '' == line:
+#                    continue
+#                db_line = line.split(self.delimiter)
+#                if len(db_line) != 8:
+#                    print("ERROR: Bad database line doesn't have 8 elements: %s" % (line))
+#                error_enum = db_line[0]
+#                implemented = db_line[1]
+#                testname = db_line[2]
+#                api = db_line[3]
+#                vuid_string = db_line[4]
+#                core_ext = db_line[5]
+#                error_str = db_line[6]
+#                note = db_line[7]
+#                # Read complete database contents into our class var for later use
+#                self.db_dict[vuid_string] = {}
+#                self.db_dict[vuid_string]['error_enum'] = error_enum
+#                self.db_dict[vuid_string]['check_implemented'] = implemented
+#                self.db_dict[vuid_string]['testname'] = testname
+#                self.db_dict[vuid_string]['api'] = api
+#                # self.db_dict[vuid_string]['vuid_string'] = vuid_string
+#                self.db_dict[vuid_string]['core_ext'] = core_ext
+#                self.db_dict[vuid_string]['error_string'] = error_str
+#                self.db_dict[vuid_string]['note'] = note
+#                # Now build custom data structs
+#                if 'Y' == implemented:
+#                    self.db_implemented_vuids.add(vuid_string)
+#                elif 'implicit' in note: # only make note of non-implemented implicit checks
+#                    self.db_unimplemented_implicit.add(vuid_string)
+#                if implemented not in ['Y', 'N']:
+#                    self.db_invalid_implemented.add(vuid_string)
+#                if testname.lower() not in ['unknown', 'none', 'nottestable']:
+#                    self.db_vuid_to_tests[vuid_string] = testname.split(',')
+#                    #if len(self.db_vuid_to_tests[error_enum]) > 1:
+#                    #    print "Found check %s that has multiple tests: %s" % (error_enum, self.db_vuid_to_tests[error_enum])
+#                    #else:
+#                    #    print "Check %s has single test: %s" % (error_enum, self.db_vuid_to_tests[error_enum])
+#                #unique_id = int(db_line[0].split('_')[-1])
+#                #if unique_id > max_id:
+#                #    max_id = unique_id
+#        if verbose:
+#            print("Found %d total VUIDs in database" % (len(self.db_dict.keys())))
+#            print("Found %d VUIDs in database marked as mplemented" % (len(self.db_implemented_vuids)))
+#            print("Found %d VUIDs in database marked as having a test implemented" % (len(self.db_vuid_to_tests.keys())))
 
 #class ValidationHeader:
 #    def __init__(self, filename=header_file):
@@ -178,9 +202,11 @@ class ValidationDatabase:
 #            print("Found %d error enums. First is %s and last is %s." % (len(self.enums), self.enums[0], self.enums[-1]))
 
 class ValidationJSON:
-    def __init__(self, filename=json_file):
-        self.filename = json_file
-        self.vuids = set()
+    def __init__(self, filename):
+        self.filename = filename
+        self.explicit_vuids = set()
+        self.implicit_vuids = set()
+        self.all_vuids = set()
 
     # Walk the JSON-derived dict and find all "vuid" key values
     def ExtractVUIDs(self, d):
@@ -195,7 +221,7 @@ class ValidationJSON:
                     for l in v:
                         for s in self.ExtractVUIDs(l):
                             yield s
-    def read(self, verbose):
+    def read(self):
         if os.path.isfile(self.filename):
             json_file = open(self.filename, 'r')
             self.json_dict = json.load(json_file)
@@ -205,13 +231,22 @@ class ValidationJSON:
             sys.exit(-1)
         # Extract all the vuid strings from the JSON db
         for vuid_string in self.ExtractVUIDs(self.json_dict):
-            self.vuids.add(vuid_string)
+            if (vuid_string[-5:-1].isdecimal()):    
+                self.explicit_vuids.add(vuid_string)    # explicit end in 5 numeric chars
+            else:
+                self.implicit_vuids.add(vuid_string)    # otherwise, implicit
+        self.all_vuids = self.explicit_vuids.union(self.implicit_vuids)
 
 class ValidationSource:
     def __init__(self, source_file_list, generated_source_file_list, generated_source_directories):
         self.source_files = source_file_list
         self.generated_source_files = generated_source_file_list
         self.generated_source_dirs = generated_source_directories
+        self.vuid_count_dict = {} # dict of vuid values to the count of how much they're used, and location of where they're used
+        self.duplicated_checks = 0
+        self.explicit_vuids = set()
+        self.implicit_vuids = set()
+        self.unassigned_vuids = set()
 
         if len(self.generated_source_files) > 0:
             qualified_paths = []
@@ -229,9 +264,7 @@ class ValidationSource:
             else:
                 self.source_files.extend(qualified_paths)
 
-        self.vuid_count_dict = {} # dict of vuid values to the count of how much they're used, and location of where they're used
-    def parse(self, verbose):
-        duplicate_checks = 0
+    def parse(self):
         prepend = None
         for sf in self.source_files:
             line_num = 0
@@ -240,24 +273,22 @@ class ValidationSource:
                     line_num = line_num + 1
                     if True in [line.strip().startswith(comment) for comment in ['//', '/*']]:
                         continue
-                    # Find vuids
+                    # Find vuid strings
                     if prepend != None:
                         line = prepend[:-2] + line.lstrip().lstrip('"') # join lines skipping CR, whitespace and trailing/leading quote char
                         prepend = None
-                    if '"VUID-' in line:
-                        # Need to isolate the validation error text
-                        #print("Line has check:%s" % (line))
+                    if any(prefix in line for prefix in vuid_prefixes):
                         line_list = line.split()
 
-                        # A VUID string that has been broken by clang will start with "VUID- and end with -, and will be last in the list
+                        # A VUID string that has been broken by clang will start with a vuid prefix and end with -, and will be last in the list
                         broken_vuid = line_list[-1]
-                        if broken_vuid.startswith('"VUID-') and broken_vuid.endswith('-"'):
+                        if any(broken_vuid.startswith(prefix) for prefix in vuid_prefixes) and broken_vuid.endswith('-"'):
                             prepend = line
                             continue
                      
                         vuid_list = []
                         for str in line_list:
-                            if '"VUID-' in str: #and True not in [ignore_str in str for ignore_str in ['[VALIDATION_ERROR_', 'kVUIDUndefined', 'UNIQUE_VALIDATION_ERROR_CODE']]:
+                            if any(prefix in str for prefix in vuid_prefixes):
                                 vuid_list.append(str.strip(',);{}"'))
                                 #break
                         for vuid in vuid_list:
@@ -265,21 +296,28 @@ class ValidationSource:
                                 self.vuid_count_dict[vuid] = {}
                                 self.vuid_count_dict[vuid]['count'] = 1
                                 self.vuid_count_dict[vuid]['file_line'] = []
-                                self.vuid_count_dict[vuid]['file_line'].append('%s,%d' % (sf, line_num))
                                 #print "Found enum %s implemented for first time in file %s" % (enum, sf)
                             else:
+                                self.duplicated_checks = self.duplicated_checks + 1
                                 self.vuid_count_dict[vuid]['count'] = self.vuid_count_dict[vuid]['count'] + 1
-                                self.vuid_count_dict[vuid]['file_line'].append('%s,%d' % (sf, line_num))
                                 #print "Found enum %s implemented for %d time in file %s" % (enum, self.enum_count_dict[enum], sf)
-                                duplicate_checks = duplicate_checks + 1
-                        #else:
-                            #print("Didn't find actual check in line:%s" % (line))
-        if verbose:
-            print("Found %d unique implemented checks and %d are duplicated at least once" % (len(self.vuid_count_dict.keys()), duplicate_checks))
+                            self.vuid_count_dict[vuid]['file_line'].append('%s,%d' % (sf, line_num))
+        # Sort vuids by type
+        for vuid in self.vuid_count_dict.keys():
+            if (vuid.startswith('VUID-')):
+                if (vuid[-5:-1].isdecimal()):    
+                    self.explicit_vuids.add(vuid)    # explicit end in 5 numeric chars
+                else:
+                    self.implicit_vuids.add(vuid)
+            elif (vuid.startswith('UNASSIGNED-')):
+                self.unassigned_vuids.add(vuid)
+            else:
+                print("Your script is broken, source parsing")
+                exit(-1)
 
 # Class to parse the validation layer test source and store testnames
 # TODO: Enhance class to detect use of unique VUIDs in the test
-class TestParser:
+class ValidationTests:
     def __init__(self, test_file_list, test_group_name=['VkLayerTest', 'VkPositiveLayerTest', 'VkWsiEnabledLayerTest']):
         self.test_files = test_file_list
         self.test_to_errors = {} # Dict where testname maps to list of vuids found in that test
@@ -287,6 +325,9 @@ class TestParser:
         for tg in test_group_name:
             self.test_trigger_txt_list.append('TEST_F(%s' % tg)
             #print('Test trigger test list: %s' % (self.test_trigger_txt_list))
+        self.explicit_vuids = set()
+        self.implicit_vuids = set()
+        self.unassigned_vuids = set()
 
     # Parse test files into internal data struct
     def parse(self):
@@ -304,16 +345,16 @@ class TestParser:
                     if prepend != None:
                         line = prepend[:-2] + line.lstrip().lstrip('"') # join lines skipping CR, whitespace and trailing/leading quote char
                         prepend = None
-                    if '"VUID-' in line:
+                    if any(prefix in line for prefix in vuid_prefixes):
                         line_list = line.split()
-                        # A VUID string that has been broken by clang will start with "VUID- and end with -, and will be last in the list
+
+                        # A VUID string that has been broken by clang will start with a vuid prefix and end with -, and will be last in the list
                         broken_vuid = line_list[-1]
-                        if broken_vuid.startswith('"VUID-') and broken_vuid.endswith('-"'):
+                        if any(broken_vuid.startswith(prefix) for prefix in vuid_prefixes) and broken_vuid.endswith('-"'):
                             prepend = line
                             continue
                      
-                    if True in [ttt in line for ttt in self.test_trigger_txt_list]:
-                        #print('Test wildcard in line: %s' % (line))
+                    if any(ttt in line for ttt in self.test_trigger_txt_list):
                         testname = line.split(',')[-1]
                         testname = testname.strip().strip(' {)')
                         #print('Inserting test: "%s"' % (testname))
@@ -325,13 +366,22 @@ class TestParser:
                         grab_next_line = False
                         testname = testname.strip().strip(' {)')
                         self.test_to_errors[testname] = []
-                    if '"VUID-' in line:
+                    if any(prefix in line for prefix in vuid_prefixes):
                         line_list = line.split()
                         for sub_str in line_list:
-                            if '"VUID-' in sub_str:
-                                #print("Trying to add vuids for line: %s" % ())
-                                #print("Adding vuid %s to test %s" % (sub_str.strip(',);'), testname))
-                                self.test_to_errors[testname].append(sub_str.strip(',);"'))
+                            if any(prefix in sub_str for prefix in vuid_prefixes):
+                                vuid_str = sub_str.strip(',);"')
+                                self.test_to_errors[testname].append(vuid_str)
+                                if (vuid_str.startswith('VUID-')):
+                                    if (vuid_str[-5:-1].isdecimal()):    
+                                        self.explicit_vuids.add(vuid_str)    # explicit end in 5 numeric chars
+                                    else:
+                                        self.implicit_vuids.add(vuid_str)
+                                elif (vuid_str.startswith('UNASSIGNED-')):
+                                    self.unassigned_vuids.add(vuid_str)
+                                else:
+                                    print("Your script is broken, test parsing")
+                                    exit(-1)
 
 # Little helper class for coloring cmd line output
 class bcolors:
@@ -360,26 +410,68 @@ class bcolors:
         return self.ENDC
 
 def main(argv):
+    global verbose_mode
+    i = 0
+    while (i < len(argv)):
+        arg = argv[i]
+        i = i + 1
+        if (arg == '-json-file'):
+            json_filename = argv[i]
+            i = i + 1
+        elif (arg == '-txtdb'):
+            txt_db = True
+            # Set filename if supplied, else use default
+            if i < len(argv) and not argv[i].startswith('-'):
+                txt_db_filename = argv[i]
+                i = i + 1
+        elif (arg == '-txtdb'):
+            csv_db = True
+            # Set filename if supplied, else use default
+            if i < len(argv) and not argv[i].startswith('-'):
+                csv_db_filename = argv[i]
+                i = i + 1
+        elif (arg in ['-verbose']):
+            verbose_mode = True
+        elif (arg in ['-help', '-h']):
+            printHelp()
+            sys.exit()
+    if json_filename == "":
+        printHelp()
+        sys.exit()
+
     result = 0 # Non-zero result indicates an error case
-    verbose_mode = 'verbose' in sys.argv
     # parse db
-    val_db = ValidationDatabase()
-    val_db.read(verbose_mode)
+    #val_db = ValidationDatabase()
+    #val_db.read(verbose_mode)
     ## parse header
     #val_header = ValidationHeader()
     #val_header.read(verbose_mode)
     # parse validusage json
-    val_json = ValidationJSON()
-    val_json.read(verbose_mode)
-    print("Found %d unique error vuids in validusage.json file." % len(val_json.vuids))
+    val_json = ValidationJSON(json_filename)
+    val_json.read()
+    if verbose_mode:
+        print("Found %d unique error vuids in validusage.json file." % len(val_json.all_vuids))
+        print("  %d explicit" % len(val_json.explicit_vuids))
+        print("  %d implicit" % len(val_json.implicit_vuids))
+
     # Create parser for layer files
     val_source = ValidationSource(layer_source_files, generated_layer_source_files, generated_layer_source_directories)
-    val_source.parse(verbose_mode)
-    print("Found %d unique error vuids in validation source code files." % len(val_source.vuid_count_dict))
+    val_source.parse()
+    if verbose_mode:
+        print("Found %d unique vuid checks in layer source code." % (len(val_source.vuid_count_dict.keys())))
+        print("  %d explicit" % len(val_source.explicit_vuids))
+        print("  %d implicit" % len(val_source.implicit_vuids))
+        print("  %d unassigned" % len(val_source.unassigned_vuids))
+        print("  %d checks are implemented more that once" % val_source.duplicated_checks)
+
     # Parse test files
-    test_parser = TestParser([test_file, ])
-    test_parser.parse()
-    print("Found %d unique error vuids in test file %s." % (len(val_source.vuid_count_dict), test_file))
+    val_tests = ValidationTests([test_file, ])
+    val_tests.parse()
+    if verbose_mode:
+        print("Found %d unique error vuids in test file %s." % (len(val_tests.vuid_set), test_file))
+        print("  %d explicit" % len(val_tests.explicit_vuids))
+        print("  %d implicit" % len(val_tests.implicit_vuids))
+        print("  %d unassigned" % len(val_tests.unassigned_vuids))
 
     # Process stats - Just doing this inline in main, could make a fancy class to handle
     #   all the processing of data and then get results from that
@@ -388,39 +480,40 @@ def main(argv):
         print("Validation Statistics")
     else:
         print("Validation/Documentation Consistency Test")
+
     # First give number of checks in db & header and report any discrepancies
-    num_db_vuids = len(val_db.db_dict.keys())
-    num_json_vuids = len(val_json.vuids)
+    #num_db_vuids = len(val_db.db_dict.keys())
+    num_json_vuids = len(val_json.explicit_vuids)
     if verbose_mode:
-        print(" Database file includes %d unique checks" % (num_db_vuids))
+        #print(" Database file includes %d unique checks" % (num_db_vuids))
         print(" Validusage.json file declares %d unique checks" % (num_json_vuids))
 
-    # Report any checks that have an invalid check_implemented flag
-    if len(val_db.db_invalid_implemented) > 0:
-        result = 1
-        print(txt_color.red() + "The following checks have an invalid check_implemented flag (must be 'Y' or 'N'):" + txt_color.endc())
-        for invalid_imp_vuid in val_db.db_invalid_implemented:
-            check_implemented = val_db.db_dict[invalid_imp_vuid]['check_implemented']
-            print(txt_color.red() + "    %s has check_implemented flag '%s'" % (invalid_imp_vuid, check_implemented) + txt_color.endc())
+    ## Report any checks that have an invalid check_implemented flag
+    #if len(val_db.db_invalid_implemented) > 0:
+    #    result = 1
+    #    print(txt_color.red() + "The following checks have an invalid check_implemented flag (must be 'Y' or 'N'):" + txt_color.endc())
+    #    for invalid_imp_vuid in val_db.db_invalid_implemented:
+    #        check_implemented = val_db.db_dict[invalid_imp_vuid]['check_implemented']
+    #        print(txt_color.red() + "    %s has check_implemented flag '%s'" % (invalid_imp_vuid, check_implemented) + txt_color.endc())
 
-    # Report details about how well the Database and Header are synchronized.
-    db_keys = set(val_db.db_dict.keys())
-    db_missing = val_json.vuids.difference(db_keys)
-    json_missing = db_keys.difference(val_json.vuids)
-    if num_db_vuids == num_json_vuids and len(db_missing) == 0 and len(json_missing) == 0:
-        if verbose_mode:
-            print(txt_color.green() + "  Database and validusage.json match, GREAT!" + txt_color.endc())
-    else:
-        print(txt_color.red() + "  Uh oh, Database doesn't match validusage.json file :(" + txt_color.endc())
-        result = 1
-        if len(db_missing) != 0:
-            print(txt_color.red() + "   The following checks are in validusage.json but missing from database:" + txt_color.endc())
-            for missing_vuid in db_missing:
-                print(txt_color.red() + "    %s" % (missing_vuid) + txt_color.endc())
-        if len(json_missing) != 0:
-            print(txt_color.red() + "   The following checks are in database but aren't declared in the validusage.json file:" + txt_color.endc())
-            for extra_vuid in json_missing:
-                print(txt_color.red() + "    %s" % (extra_vuid) + txt_color.endc())
+    ## Report details about how well the Database and Header are synchronized.
+    #db_keys = set(val_db.db_dict.keys())
+    #db_missing = val_json.vuids.difference(db_keys)
+    #json_missing = db_keys.difference(val_json.vuids)
+    #if num_db_vuids == num_json_vuids and len(db_missing) == 0 and len(json_missing) == 0:
+    #    if verbose_mode:
+    #        print(txt_color.green() + "  Database and validusage.json match, GREAT!" + txt_color.endc())
+    #else:
+    #    print(txt_color.red() + "  Uh oh, Database doesn't match validusage.json file :(" + txt_color.endc())
+    #    result = 1
+    #    if len(db_missing) != 0:
+    #        print(txt_color.red() + "   The following checks are in validusage.json but missing from database:" + txt_color.endc())
+    #        for missing_vuid in db_missing:
+    #            print(txt_color.red() + "    %s" % (missing_vuid) + txt_color.endc())
+    #    if len(json_missing) != 0:
+    #        print(txt_color.red() + "   The following checks are in database but aren't declared in the validusage.json file:" + txt_color.endc())
+    #        for extra_vuid in json_missing:
+    #            print(txt_color.red() + "    %s" % (extra_vuid) + txt_color.endc())
 
     # Report out claimed implemented checks vs. found actual implemented checks
 #    imp_not_found = [] # Checks claimed to implemented in DB file but no source found
@@ -469,11 +562,11 @@ def main(argv):
     tests_missing_vuid = {} # Report tests that don't use a VUID to check for error case
     for vuid in val_db.db_vuid_to_tests:
         for testname in val_db.db_vuid_to_tests[vuid]:
-            if testname not in test_parser.test_to_errors:
+            if testname not in val_tests.test_to_errors:
                 bad_testnames.append(testname)
             else:
                 vuid_found = False
-                for test_vuid in test_parser.test_to_errors[testname]:
+                for test_vuid in val_tests.test_to_errors[testname]:
                     if test_vuid == vuid:
                         #print("Found test that correctly checks for vuid: %s" % (vuid))
                         vuid_found = True
