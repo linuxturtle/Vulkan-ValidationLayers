@@ -20,6 +20,7 @@
  * Author: Cody Northrop <cnorthrop@google.com>
  * Author: Dave Houlton <daveh@lunarg.com>
  * Author: Jeremy Kniager <jeremyk@lunarg.com>
+ * Author: Shannon McPherson <shannon@lunarg.com>
  */
 
 #ifdef ANDROID
@@ -270,7 +271,12 @@ class ErrorMonitor {
     void SetDesiredFailureMsg(const VkFlags msgFlags, const std::string msg) { SetDesiredFailureMsg(msgFlags, msg.c_str()); }
     void SetDesiredFailureMsg(const VkFlags msgFlags, const char *const msgString) {
         test_platform_thread_lock_mutex(&mutex_);
-        desired_message_strings_.insert(msgString);
+        auto entry = desired_message_strings_.find(msgString);
+        if (entry != desired_message_strings_.end()) {
+            ++(entry->second);
+        } else {
+            desired_message_strings_.insert({msgString, 1});
+        }
         message_flags_ |= msgFlags;
         message_outstanding_count_++;
         test_platform_thread_unlock_mutex(&mutex_);
@@ -307,23 +313,40 @@ class ErrorMonitor {
 
         if (!IgnoreMessage(errorString)) {
             for (auto desired_msg : desired_message_strings_) {
-                if (desired_msg.length() == 0) {
+                const std::string desired_msg_string = std::get<0>(desired_msg);
+                if (desired_msg_string.length() == 0) {
                     // An empty desired_msg string "" indicates a positive test - not expecting an error.
                     // Return true to avoid calling layers/driver with this error.
                     // And don't erase the "" string, so it remains if another error is found.
                     result = VK_TRUE;
                     found_expected = true;
                     message_found_ = true;
-                    failure_message_strings_.insert(errorString);
-                } else if (errorString.find(desired_msg) != string::npos) {
+                    auto failure_message_entry = failure_message_strings_.find(errorString);
+                    if (failure_message_entry != failure_message_strings_.end()) {
+                        ++(failure_message_entry->second);
+                    } else {
+                        failure_message_strings_.insert({errorString, 1});
+                    }
+                } else if (errorString.find(desired_msg_string) != string::npos) {
                     found_expected = true;
                     message_outstanding_count_--;
-                    failure_message_strings_.insert(errorString);
+                    auto failure_message_entry = failure_message_strings_.find(errorString);
+                    if (failure_message_entry != failure_message_strings_.end()) {
+                        ++(failure_message_entry->second);
+                    } else {
+                        failure_message_strings_.insert({errorString, 1});
+                    }
                     message_found_ = true;
                     result = VK_TRUE;
-                    // We only want one match for each expected error so remove from set here
-                    // Since we're about the break the loop it's OK to remove from set we're iterating over
-                    desired_message_strings_.erase(desired_msg);
+                    // Remove a maximum of one failure message from the map
+                    // Map mutation is acceptable because `break` causes flow of control to exit the for loop
+                    auto desired_message_entry = desired_message_strings_.find(desired_msg_string);
+                    uint32_t count = desired_message_entry->second;
+                    if (count > 1) {
+                        --(desired_message_entry->second);
+                    } else {
+                        desired_message_strings_.erase(desired_msg_string);
+                    }
                     break;
                 }
             }
@@ -368,11 +391,15 @@ class ErrorMonitor {
     }
 
     void VerifyFound() {
-        // Not seeing the desired message is a failure. /Before/ throwing, dump any other messages.
+        // Not receiving expected message(s) is a failure. /Before/ throwing, dump any other messages
         if (!AllDesiredMsgsFound()) {
             DumpFailureMsgs();
             for (auto desired_msg : desired_message_strings_) {
-                ADD_FAILURE() << "Did not receive expected error '" << desired_msg << "'";
+                const std::string msg_string = std::get<0>(desired_msg);
+                const std::uint32_t msg_count = std::get<1>(desired_msg);
+                for (uint32_t i = 0; i < msg_count; ++i) {
+                    ADD_FAILURE() << "Did not receive expected error '" << msg_string << "'";
+                }
             }
         }
         Reset();
@@ -383,7 +410,11 @@ class ErrorMonitor {
         if (AnyDesiredMsgFound()) {
             DumpFailureMsgs();
             for (auto msg : failure_message_strings_) {
-                ADD_FAILURE() << "Expected to succeed but got error: " << msg;
+                const std::string msg_string = std::get<0>(msg);
+                const std::uint32_t msg_count = std::get<1>(msg);
+                for (uint32_t i = 0; i < msg_count; ++i) {
+                    ADD_FAILURE() << "Expected to succeed but got error: " << msg_string;
+                }
             }
         }
         Reset();
@@ -403,8 +434,8 @@ class ErrorMonitor {
     }
 
     VkFlags message_flags_;
-    std::unordered_set<string> desired_message_strings_;
-    std::unordered_set<string> failure_message_strings_;
+    std::unordered_map<std::string, uint32_t> desired_message_strings_;
+    std::unordered_map<std::string, uint32_t> failure_message_strings_;
     std::vector<std::string> ignore_message_strings_;
     vector<string> other_messages_;
     test_platform_thread_mutex mutex_;
