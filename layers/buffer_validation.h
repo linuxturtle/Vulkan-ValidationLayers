@@ -183,7 +183,7 @@ bool ValidateMaskBitsFromLayouts(core_validation::layer_data *device_data, VkCom
 bool ValidateLayoutVsAttachmentDescription(const debug_report_data *report_data, const VkImageLayout first_layout,
                                            const uint32_t attachment, const VkAttachmentDescription &attachment_description);
 
-bool ValidateLayouts(core_validation::layer_data *dev_data, VkDevice device, const VkRenderPassCreateInfo *pCreateInfo);
+bool ValidateLayouts(const core_validation::layer_data *dev_data, VkDevice device, const VkRenderPassCreateInfo *pCreateInfo);
 
 bool ValidateMapImageLayouts(core_validation::layer_data *dev_data, VkDevice device, DEVICE_MEM_INFO const *mem_info,
                              VkDeviceSize offset, VkDeviceSize end_offset);
@@ -198,14 +198,14 @@ bool ValidateImageSubresourceLayers(layer_data *dev_data, const GLOBAL_CB_NODE *
                                     const VkImageSubresourceLayers *subresource_layers, char const *func_name, char const *member,
                                     uint32_t i);
 
-bool ValidateBufferUsageFlags(layer_data *dev_data, BUFFER_STATE const *buffer_state, VkFlags desired, bool strict,
+bool ValidateBufferUsageFlags(const layer_data *dev_data, BUFFER_STATE const *buffer_state, VkFlags desired, bool strict,
                               const std::string &msgCode, char const *func_name, char const *usage_string);
 
 bool PreCallValidateCreateBuffer(layer_data *dev_data, const VkBufferCreateInfo *pCreateInfo);
 
 void PostCallRecordCreateBuffer(layer_data *device_data, const VkBufferCreateInfo *pCreateInfo, VkBuffer *pBuffer);
 
-bool PreCallValidateCreateBufferView(layer_data *dev_data, const VkBufferViewCreateInfo *pCreateInfo);
+bool PreCallValidateCreateBufferView(const layer_data *dev_data, const VkBufferViewCreateInfo *pCreateInfo);
 
 void PostCallRecordCreateBufferView(layer_data *device_data, const VkBufferViewCreateInfo *pCreateInfo, VkBufferView *pView);
 

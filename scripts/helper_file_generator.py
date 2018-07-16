@@ -364,7 +364,9 @@ class HelperFileOutputGenerator(OutputGenerator):
         outstring += '{\n'
         outstring += '    switch ((%s)input_value)\n' % groupName
         outstring += '    {\n'
-        for item in value_list:
+        # Emit these in a repeatable order so file is generated with the same contents each time.
+        # This helps compiler caching systems like ccache.
+        for item in sorted(value_list):
             outstring += '        case %s:\n' % item
             outstring += '            return "%s";\n' % item
         outstring += '        default:\n'
@@ -492,6 +494,7 @@ class HelperFileOutputGenerator(OutputGenerator):
             '',
             '#ifndef VK_EXTENSION_HELPER_H_',
             '#define VK_EXTENSION_HELPER_H_',
+            '#include <unordered_set>',
             '#include <string>',
             '#include <unordered_map>',
             '#include <utility>',
@@ -532,6 +535,11 @@ class HelperFileOutputGenerator(OutputGenerator):
             # Output the data member list
             struct  = [struct_decl]
             struct.extend([ '    bool %s{false};' % field_name[ext_name] for ext_name, info in extension_items])
+
+            # Create struct entries for saving extension count and extension list from DeviceCreateInfo
+            struct.extend([
+                '',
+                '    std::unordered_set<std::string> device_extension_set;'])
 
             # Construct the extension information map -- mapping name to data member (field), and required extensions
             # The map is contained within a static function member for portability reasons.
@@ -595,7 +603,12 @@ class HelperFileOutputGenerator(OutputGenerator):
                     '                                      const VkDeviceCreateInfo *pCreateInfo) {',
                     '        // Initialize: this to defaults,  base class fields to input.',
                     '        assert(instance_extensions);',
-                    '        *this = %s(*instance_extensions);' % struct_type])
+                    '        *this = %s(*instance_extensions);' % struct_type,
+                    '',
+                    '        // Save pCreateInfo device extension list',
+                    '        for (uint32_t extn = 0; extn < pCreateInfo->enabledExtensionCount; extn++) {',
+                    '           device_extension_set.insert(pCreateInfo->ppEnabledExtensionNames[extn]);',
+                    '        }']),
 
             struct.extend([
                 '',
@@ -767,12 +780,6 @@ class HelperFileOutputGenerator(OutputGenerator):
         safe_struct_helper_source = '\n'
         safe_struct_helper_source += '#include "vk_safe_struct.h"\n'
         safe_struct_helper_source += '#include <string.h>\n'
-        safe_struct_helper_source += '#ifdef VK_USE_PLATFORM_ANDROID_KHR\n'
-        safe_struct_helper_source += '#if __ANDROID_API__ < __ANDROID_API_O__\n'
-        safe_struct_helper_source += 'struct AHardwareBuffer {};\n'
-        safe_struct_helper_source += '#endif\n'
-        safe_struct_helper_source += '#endif\n'
-
         safe_struct_helper_source += '\n'
         safe_struct_helper_source += self.GenerateSafeStructSource()
         return safe_struct_helper_source
@@ -787,6 +794,12 @@ class HelperFileOutputGenerator(OutputGenerator):
                        'VkAndroidSurfaceCreateInfoKHR',
                        'VkWin32SurfaceCreateInfoKHR'
                        ]
+
+        # For abstract types just want to save the pointer away
+        # since we cannot make a copy.
+        abstract_types = ['AHardwareBuffer',
+                          'ANativeWindow',
+                         ]
         for item in self.structMembers:
             if self.NeedSafeStruct(item) == False:
                 continue
@@ -1018,21 +1031,24 @@ class HelperFileOutputGenerator(OutputGenerator):
                     else:
                         default_init_list += '\n    %s(nullptr),' % (member.name)
                         init_list += '\n    %s(nullptr),' % (member.name)
-                        init_func_txt += '    %s = nullptr;\n' % (member.name)
-                        if 'pNext' != member.name and 'void' not in m_type:
-                            if not member.isstaticarray and (member.len is None or '/' in member.len):
-                                construct_txt += '    if (in_struct->%s) {\n' % member.name
-                                construct_txt += '        %s = new %s(*in_struct->%s);\n' % (member.name, m_type, member.name)
-                                construct_txt += '    }\n'
-                                destruct_txt += '    if (%s)\n' % member.name
-                                destruct_txt += '        delete %s;\n' % member.name
-                            else:
-                                construct_txt += '    if (in_struct->%s) {\n' % member.name
-                                construct_txt += '        %s = new %s[in_struct->%s];\n' % (member.name, m_type, member.len)
-                                construct_txt += '        memcpy ((void *)%s, (void *)in_struct->%s, sizeof(%s)*in_struct->%s);\n' % (member.name, member.name, m_type, member.len)
-                                construct_txt += '    }\n'
-                                destruct_txt += '    if (%s)\n' % member.name
-                                destruct_txt += '        delete[] %s;\n' % member.name
+                        if m_type in abstract_types:
+                            construct_txt += '    %s = in_struct->%s;\n' % (member.name, member.name)
+                        else:
+                            init_func_txt += '    %s = nullptr;\n' % (member.name)
+                            if 'pNext' != member.name and 'void' not in m_type:
+                                if not member.isstaticarray and (member.len is None or '/' in member.len):
+                                    construct_txt += '    if (in_struct->%s) {\n' % member.name
+                                    construct_txt += '        %s = new %s(*in_struct->%s);\n' % (member.name, m_type, member.name)
+                                    construct_txt += '    }\n'
+                                    destruct_txt += '    if (%s)\n' % member.name
+                                    destruct_txt += '        delete %s;\n' % member.name
+                                else:
+                                    construct_txt += '    if (in_struct->%s) {\n' % member.name
+                                    construct_txt += '        %s = new %s[in_struct->%s];\n' % (member.name, m_type, member.len)
+                                    construct_txt += '        memcpy ((void *)%s, (void *)in_struct->%s, sizeof(%s)*in_struct->%s);\n' % (member.name, member.name, m_type, member.len)
+                                    construct_txt += '    }\n'
+                                    destruct_txt += '    if (%s)\n' % member.name
+                                    destruct_txt += '        delete[] %s;\n' % member.name
                 elif member.isstaticarray or member.len is not None:
                     if member.len is None:
                         # Extract length of static array by grabbing val between []

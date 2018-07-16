@@ -175,6 +175,8 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             'vkGetDeviceQueue2',
             'vkGetSwapchainImagesKHR',
             'vkCreateDescriptorSetLayout',
+            'vkGetDescriptorSetLayoutSupport',
+            'vkGetDescriptorSetLayoutSupportKHR',
             'vkCreateDebugUtilsMessengerEXT',
             'vkDestroyDebugUtilsMessengerEXT',
             'vkSubmitDebugUtilsMessageEXT',
@@ -188,6 +190,9 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             'vkCmdInsertDebugUtilsLabelEXT',
             'vkGetDisplayModePropertiesKHR',
             'vkGetPhysicalDeviceDisplayPropertiesKHR',
+            'vkGetPhysicalDeviceDisplayProperties2KHR',
+            'vkGetDisplayPlaneSupportedDisplaysKHR',
+            'vkGetDisplayModeProperties2KHR',
             ]
         # These VUIDS are not implicit, but are best handled in this layer. Codegen for vkDestroy calls will generate a key
         # which is translated here into a good VU.  Saves ~40 checks.
@@ -973,9 +978,13 @@ class ObjectTrackerOutputGenerator(OutputGenerator):
             # Pull out the text for each of the parameters, separate them by commas in a list
             paramstext = ', '.join([str(param.text) for param in params])
             # Use correct dispatch table
-            disp_type = cmdinfo.elem.find('param/type').text
             disp_name = cmdinfo.elem.find('param/name').text
-            dispatch_table = 'get_dispatch_table(ot_%s_table_map, %s)->' % (self.GetDispType(disp_type), disp_name)
+            disp_type = cmdinfo.elem.find('param/type').text
+            if disp_type in ["VkInstance", "VkPhysicalDevice"] or cmdname == 'vkCreateInstance':
+                object_type = 'instance'
+            else:
+                object_type = 'device'
+            dispatch_table = 'GetLayerDataPtr(get_dispatch_key(%s), layer_data_map)->%s_dispatch_table.' % (disp_name, object_type)
             API = cmdinfo.elem.attrib.get('name').replace('vk', dispatch_table, 1)
             # Put all this together for the final down-chain call
             if assignresult != '':

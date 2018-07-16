@@ -85,6 +85,34 @@ static inline SepString string_join(const char *sep, const StringCollection &str
     return string_join<SepString, StringCollection>(SepString(sep), strings);
 }
 
+// Perl/Python style join operation for general types using stream semantics
+// Note: won't be as fast as string_join above, but simpler to use (and code)
+// Note: Modifiable reference doesn't match the google style but does match std style for stream handling and algorithms
+template <typename Stream, typename String, typename ForwardIt>
+Stream &stream_join(Stream &stream, const String &sep, ForwardIt first, ForwardIt last) {
+    if (first != last) {
+        stream << *first;
+        ++first;
+        while (first != last) {
+            stream << sep << *first;
+            ++first;
+        }
+    }
+    return stream;
+}
+
+// stream_join For whole collections with forward iterators
+template <typename Stream, typename String, typename Collection>
+Stream &stream_join(Stream &stream, const String &sep, const Collection &values) {
+    return stream_join(stream, sep, values.cbegin(), values.cend());
+}
+
+typedef void *dispatch_key;
+static inline dispatch_key get_dispatch_key(const void *object) { return (dispatch_key) * (VkLayerDispatchTable **)object; }
+
+VK_LAYER_EXPORT VkLayerInstanceCreateInfo *get_chain_info(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func);
+VK_LAYER_EXPORT VkLayerDeviceCreateInfo *get_chain_info(const VkDeviceCreateInfo *pCreateInfo, VkLayerFunction func);
+
 extern "C" {
 #endif
 

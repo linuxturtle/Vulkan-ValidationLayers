@@ -404,9 +404,8 @@ struct DAGNode {
 struct RENDER_PASS_STATE : public BASE_NODE {
     VkRenderPass renderPass;
     safe_VkRenderPassCreateInfo createInfo;
-    std::vector<bool> hasSelfDependency;
+    std::vector<std::vector<uint32_t>> self_dependencies;
     std::vector<DAGNode> subpassToNode;
-    std::vector<int32_t> subpass_to_dependency_index;  // srcSubpass to dependency index of self dep, or -1 if none
     std::unordered_map<uint32_t, bool> attachment_first_read;
 
     RENDER_PASS_STATE(VkRenderPassCreateInfo const *pCreateInfo) : createInfo(pCreateInfo) {}
@@ -443,8 +442,10 @@ enum CMD_TYPE {
     CMD_DRAWINDEXED,
     CMD_DRAWINDEXEDINDIRECT,
     CMD_DRAWINDEXEDINDIRECTCOUNTAMD,
+    CMD_DRAWINDEXEDINDIRECTCOUNTKHR,
     CMD_DRAWINDIRECT,
     CMD_DRAWINDIRECTCOUNTAMD,
+    CMD_DRAWINDIRECTCOUNTKHR,
     CMD_ENDCOMMANDBUFFER,  // Should be the last command in any RECORDED cmd buffer
     CMD_ENDQUERY,
     CMD_ENDRENDERPASS,
@@ -1041,7 +1042,7 @@ const VkPhysicalDeviceFeatures *GetEnabledFeatures(const layer_data *device_data
 const DeviceExtensions *GetEnabledExtensions(const layer_data *device_data);
 const VkPhysicalDeviceDescriptorIndexingFeaturesEXT *GetEnabledDescriptorIndexingFeatures(const layer_data *device_data);
 
-void invalidateCommandBuffers(const layer_data *, std::unordered_set<GLOBAL_CB_NODE *> const &, VK_OBJECT);
+void InvalidateCommandBuffers(const layer_data *, std::unordered_set<GLOBAL_CB_NODE *> const &, VK_OBJECT);
 bool ValidateMemoryIsBoundToBuffer(const layer_data *, const BUFFER_STATE *, const char *, const std::string &);
 bool ValidateMemoryIsBoundToImage(const layer_data *, const IMAGE_STATE *, const char *, const std::string &);
 void AddCommandBufferBindingSampler(GLOBAL_CB_NODE *, SAMPLER_STATE *);
@@ -1051,33 +1052,33 @@ void AddCommandBufferBindingBuffer(const layer_data *, GLOBAL_CB_NODE *, BUFFER_
 void AddCommandBufferBindingBufferView(const layer_data *, GLOBAL_CB_NODE *, BUFFER_VIEW_STATE *);
 bool ValidateObjectNotInUse(const layer_data *dev_data, BASE_NODE *obj_node, VK_OBJECT obj_struct, const char *caller_name,
                             const std::string &error_code);
-void invalidateCommandBuffers(const layer_data *dev_data, std::unordered_set<GLOBAL_CB_NODE *> const &cb_nodes, VK_OBJECT obj);
+void InvalidateCommandBuffers(const layer_data *dev_data, std::unordered_set<GLOBAL_CB_NODE *> const &cb_nodes, VK_OBJECT obj);
 void RemoveImageMemoryRange(uint64_t handle, DEVICE_MEM_INFO *mem_info);
 void RemoveBufferMemoryRange(uint64_t handle, DEVICE_MEM_INFO *mem_info);
 bool ClearMemoryObjectBindings(layer_data *dev_data, uint64_t handle, VulkanObjectType type);
 bool ValidateCmdQueueFlags(layer_data *dev_data, const GLOBAL_CB_NODE *cb_node, const char *caller_name, VkQueueFlags flags,
                            const std::string &error_code);
 bool ValidateCmd(layer_data *my_data, const GLOBAL_CB_NODE *pCB, const CMD_TYPE cmd, const char *caller_name);
-bool insideRenderPass(const layer_data *my_data, const GLOBAL_CB_NODE *pCB, const char *apiName, const std::string &msgCode);
+bool InsideRenderPass(const layer_data *my_data, const GLOBAL_CB_NODE *pCB, const char *apiName, const std::string &msgCode);
 void SetImageMemoryValid(layer_data *dev_data, IMAGE_STATE *image_state, bool valid);
-bool outsideRenderPass(const layer_data *my_data, GLOBAL_CB_NODE *pCB, const char *apiName, const std::string &msgCode);
+bool OutsideRenderPass(const layer_data *my_data, GLOBAL_CB_NODE *pCB, const char *apiName, const std::string &msgCode);
 void SetLayout(GLOBAL_CB_NODE *pCB, ImageSubresourcePair imgpair, const IMAGE_CMD_BUF_LAYOUT_NODE &node);
 void SetLayout(GLOBAL_CB_NODE *pCB, ImageSubresourcePair imgpair, const VkImageLayout &layout);
 bool ValidateImageMemoryIsValid(layer_data *dev_data, IMAGE_STATE *image_state, const char *functionName);
 bool ValidateImageSampleCount(layer_data *dev_data, IMAGE_STATE *image_state, VkSampleCountFlagBits sample_count,
                               const char *location, const std::string &msgCode);
-bool rangesIntersect(layer_data const *dev_data, MEMORY_RANGE const *range1, VkDeviceSize offset, VkDeviceSize end);
+bool RangesIntersect(layer_data const *dev_data, MEMORY_RANGE const *range1, VkDeviceSize offset, VkDeviceSize end);
 bool ValidateBufferMemoryIsValid(layer_data *dev_data, BUFFER_STATE *buffer_state, const char *functionName);
 void SetBufferMemoryValid(layer_data *dev_data, BUFFER_STATE *buffer_state, bool valid);
 bool ValidateCmdSubpassState(const layer_data *dev_data, const GLOBAL_CB_NODE *pCB, const CMD_TYPE cmd_type);
 bool ValidateCmd(layer_data *dev_data, const GLOBAL_CB_NODE *cb_state, const CMD_TYPE cmd, const char *caller_name);
 
 // Prototypes for layer_data accessor functions.  These should be in their own header file at some point
-VkFormatProperties GetFormatProperties(core_validation::layer_data *device_data, VkFormat format);
+VkFormatProperties GetFormatProperties(const core_validation::layer_data *device_data, const VkFormat format);
 VkResult GetImageFormatProperties(core_validation::layer_data *device_data, const VkImageCreateInfo *image_ci,
                                   VkImageFormatProperties *image_format_properties);
 const debug_report_data *GetReportData(const layer_data *);
-const VkPhysicalDeviceProperties *GetPhysicalDeviceProperties(layer_data *);
+const VkPhysicalDeviceProperties *GetPhysicalDeviceProperties(const layer_data *);
 const CHECK_DISABLED *GetDisables(layer_data *);
 std::unordered_map<VkImage, std::unique_ptr<IMAGE_STATE>> *GetImageMap(core_validation::layer_data *);
 std::unordered_map<VkImage, std::vector<ImageSubresourcePair>> *GetImageSubresourceMap(layer_data *);

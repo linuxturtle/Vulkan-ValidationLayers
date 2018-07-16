@@ -1,6 +1,6 @@
-## How to Contribute to Vulkan Source Repositories
+# How to Contribute to Vulkan Source Repositories
 
-### **The Repository**
+## **The Repository**
 
 The source code for The Vulkan-ValidationLayer components is sponsored by Khronos and LunarG.
 * [Khronos Vulkan-ValidationLayers](https://github.com/KhronosGroup/Vulkan-ValidationLayers)
@@ -16,9 +16,11 @@ and tests for these validation checks.
 There are a couple of methods to identify areas of need:
 * Examine the [issues list](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues)
 in this repository and look for issues that are of interest
-* Alternatively, examine the [vk_validation_error_database.txt](layers/vk_validation_error_database.txt)
-file -- unimplemented validation checks are marked with an 'N' in the 'check_implemented' column and each
-of these needs coverage in the validation layers.
+* Alternatively, run the `vk_validation_stats.py` script (in the scripts directory) with the `-todo`
+command line argument to see a list of as-yet unimplemented validation checks.
+* Having selected a validation check to work on, it is often efficient to implement a block of related checks
+at once. Refer to the validation database output from `vk_validation_stats.py` (available in text, html,
+or csv format) to identify related checks that may be implemented simultaneously.
 
 Of course, if you have your own work in mind, please open an issue to describe it and assign it to yourself.
 Finally, please feel free to contact any of the developers that are actively contributing should you
@@ -56,10 +58,10 @@ decision during code review. This should be used responsibly. An example of a ba
 a good reason is "This violates the style guide, but it improves type safety."
 
 * Run **clang-format** on your changes to maintain consistent formatting
-    * There are `.clang-format files` present in the repository to define clang-format settings
+    * There are `.clang-format` files present in the repository to define clang-format settings
       which are found and used automatically by clang-format.
-	* **clang-format** binaries are available from the LLVM orginization, here: https://clang.llvm.org/. Our CI system (Travis-CI) 
-	  currently uses clang-format version 5.0.0 to check that the lines of code you have changed are formatted properly. It is 
+	* **clang-format** binaries are available from the LLVM orginization, here: [LLVM](https://clang.llvm.org/). Our CI system (Travis-CI)
+	  currently uses clang-format version 5.0.0 to check that the lines of code you have changed are formatted properly. It is
 	  recommended that you use the same version to format your code prior to submission.
     * A sample git workflow may look like:
 
@@ -110,21 +112,47 @@ Pull Requests to GitHub are tested in the cloud on Linux and Windows VMs. The Li
 The Linux testing includes iterating on all of the validation layer tests over multiple [different device](https://github.com/KhronosGroup/Vulkan-ValidationLayers/tree/master/tests/device_profiles) profiles using the [devsim layer](https://github.com/LunarG/VulkanTools/tree/master/layersvt) in combination with the [mock icd](https://github.com/KhronosGroup/Vulkan-Tools/tree/master/icd). This is a fast way to simulate testing across different devices. Any new tests must pass across all device profiles.
 
 #### **Special Considerations for Validation Layers**
-* **Validation Tests**  If you are submitting a change that adds a new validation check, you should also construct a "negative" test function.
+* **Validation Tests:**  If you are submitting a change that adds a new validation check, you should also construct a "negative" test function.
 The negative test function purposely violates the validation rule that the new validation check is looking for.
 The test should cause your new validation check to identify the violation and issue a validation error report.
 And finally, the test should check that the validation error report is generated and consider the test as "passing"
 if the report is received.  Otherwise, the test should indicate "failure".
 This new test should be added to the validation layer test program in the `tests` directory and contributed
-at the same time as the new validation check itself, along with appropriate updates to `layers\vk_validation_error_database.txt`.
-There are many existing validation tests in this directory that can be used as a starting point.
-* **Validation Checks**  The majority of validation checks are carried out by the Core Validation layer. In general, this layer
+at the same time as the new validation check itself. There are many existing validation tests in this directory that can be
+used as a starting point.
+* **Validation Checks:**  The majority of validation checks are carried out by the Core Validation layer. In general, this layer
 contains checks that require some amount of application state to carry out. In contrast, the parameter validation layer contains
 checks that require (mostly) no state at all. Please inquire if you are unsure of the location for your contribution. The other
 layers (threading, object_tracker, unique_objects) are more special-purpose and are mostly code-generated from the specification.
-* **Validation Error/Warning Messages**  Strive to give specific information describing the particulars of the failure, including
+* **Validation Error/Warning Messages:**  Strive to give specific information describing the particulars of the failure, including
 output all of the applicable Vulkan Objects and related values. Also, ensure that when messages can give suggestions about _how_ to
 fix the problem, they should do so to better assist the user.
+* **Validation Statistics:** The `vk_validation_stats.py` script (in the scripts directory) inspects the layer and test source files
+and reports a variety of statistics on validation completeness and correctness. Before submitting a change you should run this
+script with the consistency check (`-c`) argument to ensure that your changes have not introduced any inconsistencies in the code.
+
+#### Coding Conventions for [CMake](http://cmake.org) files
+
+* When editing configuration files for CMake, follow the style conventions of the surrounding code.
+  * The column limit is 132.
+  * The indent is 4 spaces.
+  * CMake functions are lower-case.
+  * Variable and keyword names are upper-case.
+* The format is defined by
+  [cmake-format](https://github.com/cheshirekow/cmake_format)
+  using the `.cmake-format.py` file in the repository to define the settings.
+  See the cmake-format page for information about its simple markup for comments.
+* Disable reformatting of a block of comment lines by inserting
+  a `# ~~~` comment line before and after that block.
+* Disable any formatting of a block of lines by surrounding that block with
+  `# cmake-format: off` and `# cmake-format: on` comment lines.
+* To install: `sudo pip install cmake_format`
+* To run: `cmake-format --in-place $FILENAME`
+* **IMPORTANT (June 2018)** cmake-format v0.3.6 has a
+  [bug]( https://github.com/cheshirekow/cmake_format/issues/50)
+  that can corrupt the formatting of comment lines in CMake files.
+  A workaround is to use the following command _before_ running cmake-format:
+  `sed --in-place='' 's/^  *#/#/' $FILENAME`
 
 ### **Contributor License Agreement (CLA)**
 

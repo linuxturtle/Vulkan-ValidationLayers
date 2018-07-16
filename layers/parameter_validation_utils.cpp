@@ -41,11 +41,11 @@
 #include "vk_dispatch_table_helper.h"
 #include "vk_typemap_helper.h"
 
-#include "vk_layer_table.h"
 #include "vk_layer_data.h"
 #include "vk_layer_logging.h"
 #include "vk_layer_extension_utils.h"
 #include "vk_layer_utils.h"
+#include "vk_layer_dispatch_table.h"
 
 #include "parameter_name.h"
 #include "parameter_validation.h"
@@ -127,10 +127,7 @@ static inline bool in_inclusive_range(const T &value, const T &min, const T &max
 }
 
 static bool validate_string(debug_report_data *report_data, const char *apiName, const ParameterName &stringName,
-                            const char *validateString) {
-    assert(apiName != nullptr);
-    assert(validateString != nullptr);
-
+                            const std::string &vuid, const char *validateString) {
     bool skip = false;
 
     VkStringErrorFlags result = vk_string_validate(MaxParamCheckerStringLength, validateString);
@@ -138,13 +135,11 @@ static bool validate_string(debug_report_data *report_data, const char *apiName,
     if (result == VK_STRING_ERROR_NONE) {
         return skip;
     } else if (result & VK_STRING_ERROR_LENGTH) {
-        skip = log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
-                       kVUID_PVError_InvalidUsage, "%s: string %s exceeds max length %d", apiName, stringName.get_name().c_str(),
-                       MaxParamCheckerStringLength);
+        skip = log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
+                       "%s: string %s exceeds max length %d", apiName, stringName.get_name().c_str(), MaxParamCheckerStringLength);
     } else if (result & VK_STRING_ERROR_BAD_DATA) {
-        skip = log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
-                       kVUID_PVError_InvalidUsage, "%s: string %s contains invalid characters or is badly formed", apiName,
-                       stringName.get_name().c_str());
+        skip = log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, vuid,
+                       "%s: string %s contains invalid characters or is badly formed", apiName, stringName.get_name().c_str());
     }
     return skip;
 }
@@ -340,14 +335,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 
         if (pCreateInfo->pApplicationInfo) {
             if (pCreateInfo->pApplicationInfo->pApplicationName) {
-                validate_string(my_instance_data->report_data, "vkCreateInstance",
-                                "pCreateInfo->VkApplicationInfo->pApplicationName",
-                                pCreateInfo->pApplicationInfo->pApplicationName);
+                validate_string(
+                    my_instance_data->report_data, "vkCreateInstance", "pCreateInfo->VkApplicationInfo->pApplicationName",
+                    "VUID-VkApplicationInfo-pApplicationName-parameter", pCreateInfo->pApplicationInfo->pApplicationName);
             }
 
             if (pCreateInfo->pApplicationInfo->pEngineName) {
                 validate_string(my_instance_data->report_data, "vkCreateInstance", "pCreateInfo->VkApplicationInfo->pEngineName",
-                                pCreateInfo->pApplicationInfo->pEngineName);
+                                "VUID-VkApplicationInfo-pEngineName-parameter", pCreateInfo->pApplicationInfo->pEngineName);
             }
         }
 
@@ -500,7 +495,7 @@ static bool ValidateDeviceCreateInfo(instance_layer_data *instance_data, VkPhysi
     if ((pCreateInfo->enabledLayerCount > 0) && (pCreateInfo->ppEnabledLayerNames != NULL)) {
         for (size_t i = 0; i < pCreateInfo->enabledLayerCount; i++) {
             skip |= validate_string(instance_data->report_data, "vkCreateDevice", "pCreateInfo->ppEnabledLayerNames",
-                                    pCreateInfo->ppEnabledLayerNames[i]);
+                                    "VUID-VkDeviceCreateInfo-ppEnabledLayerNames-parameter", pCreateInfo->ppEnabledLayerNames[i]);
         }
     }
 
@@ -510,6 +505,7 @@ static bool ValidateDeviceCreateInfo(instance_layer_data *instance_data, VkPhysi
 
         for (size_t i = 0; i < pCreateInfo->enabledExtensionCount; i++) {
             skip |= validate_string(instance_data->report_data, "vkCreateDevice", "pCreateInfo->ppEnabledExtensionNames",
+                                    "VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-parameter",
                                     pCreateInfo->ppEnabledExtensionNames[i]);
             skip |= validate_extension_reqs(instance_data, extensions, "VUID-vkCreateDevice-ppEnabledExtensionNames-01387",
                                             "device", pCreateInfo->ppEnabledExtensionNames[i]);
@@ -708,7 +704,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateCommandPool(VkDevice device, const VkComm
     std::unique_lock<std::mutex> lock(global_lock);
 
     skip |= ValidateDeviceQueueFamily(local_data, pCreateInfo->queueFamilyIndex, "vkCreateCommandPool",
-                                      "pCreateInfo->queueFamilyIndex", "VUID-VkCommandPoolCreateInfo-queueFamilyIndex-00039");
+                                      "pCreateInfo->queueFamilyIndex", "VUID-vkCreateCommandPool-queueFamilyIndex-01937");
 
     skip |= parameter_validation_vkCreateCommandPool(device, pCreateInfo, pAllocator, pCommandPool);
 
@@ -1123,62 +1119,6 @@ bool pv_vkCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateI
     debug_report_data *report_data = device_data->report_data;
 
     if (pCreateInfo != nullptr) {
-        if ((pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_1D) || (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_2D)) {
-            if ((pCreateInfo->subresourceRange.layerCount != 1) &&
-                (pCreateInfo->subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS)) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_%dD, "
-                                "pCreateInfo->subresourceRange.layerCount must be 1",
-                                ((pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_1D) ? 1 : 2));
-            }
-        } else if ((pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_1D_ARRAY) ||
-                   (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY)) {
-            if ((pCreateInfo->subresourceRange.layerCount < 1) &&
-                (pCreateInfo->subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS)) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_%dD_ARRAY, "
-                                "pCreateInfo->subresourceRange.layerCount must be >= 1",
-                                ((pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_1D_ARRAY) ? 1 : 2));
-            }
-        } else if (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_CUBE) {
-            if ((pCreateInfo->subresourceRange.layerCount != 6) &&
-                (pCreateInfo->subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS)) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_CUBE, "
-                                "pCreateInfo->subresourceRange.layerCount must be 6");
-            }
-        } else if (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_CUBE_ARRAY) {
-            if (((pCreateInfo->subresourceRange.layerCount == 0) || ((pCreateInfo->subresourceRange.layerCount % 6) != 0)) &&
-                (pCreateInfo->subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS)) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_CUBE_ARRAY, "
-                                "pCreateInfo->subresourceRange.layerCount must be a multiple of 6");
-            }
-            if (!device_data->physical_device_features.imageCubeArray) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-                                "vkCreateImageView: Device feature imageCubeArray not enabled.");
-            }
-        } else if (pCreateInfo->viewType == VK_IMAGE_VIEW_TYPE_3D) {
-            if (pCreateInfo->subresourceRange.baseArrayLayer != 0) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_3D, "
-                                "pCreateInfo->subresourceRange.baseArrayLayer must be 0");
-            }
-
-            if ((pCreateInfo->subresourceRange.layerCount != 1) &&
-                (pCreateInfo->subresourceRange.layerCount != VK_REMAINING_ARRAY_LAYERS)) {
-                skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0, 1,
-
-                                "vkCreateImageView: if pCreateInfo->viewType is VK_IMAGE_TYPE_3D, "
-                                "pCreateInfo->subresourceRange.layerCount must be 1");
-            }
-        }
-
         // Validate chained VkImageViewUsageCreateInfo struct, if present
         if (nullptr != pCreateInfo->pNext) {
             auto chained_ivuci_struct = lvl_find_in_chain<VkImageViewUsageCreateInfoKHR>(pCreateInfo->pNext);
@@ -1989,7 +1929,7 @@ bool pv_vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache
             for (size_t j = 0; j < pCreateInfos[i].stageCount; j++) {
                 skip |= validate_string(device_data->report_data, "vkCreateGraphicsPipelines",
                                         ParameterName("pCreateInfos[%i].pStages[%i].pName", ParameterName::IndexVector{i, j}),
-                                        pCreateInfos[i].pStages[j].pName);
+                                        "VUID-VkGraphicsPipelineCreateInfo-pStages-parameter", pCreateInfos[i].pStages[j].pName);
             }
         }
     }
@@ -2006,7 +1946,7 @@ bool pv_vkCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache,
     for (uint32_t i = 0; i < createInfoCount; i++) {
         skip |= validate_string(device_data->report_data, "vkCreateComputePipelines",
                                 ParameterName("pCreateInfos[%i].stage.pName", ParameterName::IndexVector{i}),
-                                pCreateInfos[i].stage.pName);
+                                "VUID-VkPipelineShaderStageCreateInfo-pName-parameter", pCreateInfos[i].stage.pName);
     }
 
     return skip;
@@ -2388,7 +2328,8 @@ bool pv_vkBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBuffe
     // TODO: pBeginInfo->pInheritanceInfo must not be NULL if commandBuffer is a secondary command buffer
     skip |= validate_struct_type(report_data, "vkBeginCommandBuffer", "pBeginInfo->pInheritanceInfo",
                                  "VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO", pBeginInfo->pInheritanceInfo,
-                                 VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, false, kVUIDUndefined);
+                                 VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO, false,
+                                 "VUID_vkBeginCommandBuffer-pBeginInfo-parameter", "VUID_VkCommandBufferBeginInfo-sType-sType");
 
     if (pBeginInfo->pInheritanceInfo != NULL) {
         skip |= validate_struct_pnext(report_data, "vkBeginCommandBuffer", "pBeginInfo->pInheritanceInfo->pNext", NULL,
@@ -3037,12 +2978,14 @@ bool pv_vkCmdDispatchBaseKHR(VkCommandBuffer commandBuffer, uint32_t baseGroupX,
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *funcName) {
+    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
+    if (!ApiParentExtensionEnabled(funcName, device_data->extensions.device_extension_set)) {
+        return nullptr;
+    }
     const auto item = name_to_funcptr_map.find(funcName);
     if (item != name_to_funcptr_map.end()) {
         return reinterpret_cast<PFN_vkVoidFunction>(item->second);
     }
-
-    layer_data *device_data = GetLayerDataPtr(get_dispatch_key(device), layer_data_map);
     const auto &table = device_data->dispatch_table;
     if (!table.GetDeviceProcAddr) return nullptr;
     return table.GetDeviceProcAddr(device, funcName);

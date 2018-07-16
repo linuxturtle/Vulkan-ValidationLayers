@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2016 The Khronos Group Inc.
- * Copyright (c) 2015-2016 Valve Corporation
- * Copyright (c) 2015-2016 LunarG, Inc.
- * Copyright (C) 2015-2016 Google Inc.
+/* Copyright (c) 2015-2018 The Khronos Group Inc.
+ * Copyright (c) 2015-2018 Valve Corporation
+ * Copyright (c) 2015-2018 LunarG, Inc.
+ * Copyright (C) 2015-2018 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ using DescriptorSetLayoutId = cvdescriptorset::DescriptorSetLayoutId;
 // Canonical dictionary of DescriptorSetLayoutDef (without any handle/device specific information)
 cvdescriptorset::DescriptorSetLayoutDict descriptor_set_layout_dict;
 
-DescriptorSetLayoutId get_canonical_id(const VkDescriptorSetLayoutCreateInfo *p_create_info) {
+DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_create_info) {
     return descriptor_set_layout_dict.look_up(DescriptorSetLayoutDef(p_create_info));
 }
 
@@ -235,9 +235,9 @@ bool cvdescriptorset::DescriptorSetLayout::IsCompatible(DescriptorSetLayout cons
                                                         std::string *error_msg) const {
     // Trivial case
     if (layout_ == rh_ds_layout->GetDescriptorSetLayout()) return true;
-    if (get_layout_def() == rh_ds_layout->get_layout_def()) return true;
+    if (GetLayoutDef() == rh_ds_layout->GetLayoutDef()) return true;
     bool detailed_compat_check =
-        get_layout_def()->IsCompatible(layout_, rh_ds_layout->GetDescriptorSetLayout(), rh_ds_layout->get_layout_def(), error_msg);
+        GetLayoutDef()->IsCompatible(layout_, rh_ds_layout->GetDescriptorSetLayout(), rh_ds_layout->GetLayoutDef(), error_msg);
     // The detailed check should never tell us mismatching DSL are compatible
     assert(!detailed_compat_check);
     return detailed_compat_check;
@@ -353,7 +353,7 @@ bool cvdescriptorset::DescriptorSetLayoutDef::VerifyUpdateConsistency(uint32_t c
 // handle invariant portion
 cvdescriptorset::DescriptorSetLayout::DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *p_create_info,
                                                           const VkDescriptorSetLayout layout)
-    : layout_(layout), layout_destroyed_(false), layout_id_(get_canonical_id(p_create_info)) {}
+    : layout_(layout), layout_destroyed_(false), layout_id_(GetCanonicalId(p_create_info)) {}
 
 // Validate descriptor set layout create info
 bool cvdescriptorset::DescriptorSetLayout::ValidateCreateInfo(
@@ -369,7 +369,7 @@ bool cvdescriptorset::DescriptorSetLayout::ValidateCreateInfo(
     const bool push_descriptor_set = !!(create_info->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR);
     if (push_descriptor_set && !push_descriptor_ext) {
         skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
-                        DRAWSTATE_EXTENSION_NOT_ENABLED,
+                        kVUID_Core_DrawState_ExtensionNotEnabled,
                         "Attempted to use %s in %s but its required extension %s has not been enabled.\n",
                         "VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR", "VkDescriptorSetLayoutCreateInfo::flags",
                         VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
@@ -378,7 +378,7 @@ bool cvdescriptorset::DescriptorSetLayout::ValidateCreateInfo(
     const bool update_after_bind_set = !!(create_info->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT);
     if (update_after_bind_set && !descriptor_indexing_ext) {
         skip |= log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_UNKNOWN_EXT, 0,
-                        DRAWSTATE_EXTENSION_NOT_ENABLED,
+                        kVUID_Core_DrawState_ExtensionNotEnabled,
                         "Attemped to use %s in %s but its required extension %s has not been enabled.\n",
                         "VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT", "VkDescriptorSetLayoutCreateInfo::flags",
                         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
@@ -614,7 +614,7 @@ cvdescriptorset::DescriptorSet::DescriptorSet(const VkDescriptorSet set, const V
 
 cvdescriptorset::DescriptorSet::~DescriptorSet() { InvalidateBoundCmdBuffers(); }
 
-static std::string string_descriptor_req_view_type(descriptor_req req) {
+static std::string StringDescriptorReqViewType(descriptor_req req) {
     std::string result("");
     for (unsigned i = 0; i <= VK_IMAGE_VIEW_TYPE_END_RANGE; i++) {
         if (req & (1 << i)) {
@@ -747,7 +747,7 @@ bool cvdescriptorset::DescriptorSet::ValidateDrawState(const std::map<uint32_t, 
                         // bad view type
                         std::stringstream error_str;
                         error_str << "Descriptor in binding #" << binding << " at global descriptor index " << i
-                                  << " requires an image view of type " << string_descriptor_req_view_type(reqs) << " but got "
+                                  << " requires an image view of type " << StringDescriptorReqViewType(reqs) << " but got "
                                   << string_VkImageViewType(image_view_ci.viewType) << ".";
                         *error = error_str.str();
                         return false;
@@ -859,7 +859,7 @@ uint32_t cvdescriptorset::DescriptorSet::GetStorageUpdates(const std::map<uint32
 }
 // Set is being deleted or updates so invalidate all bound cmd buffers
 void cvdescriptorset::DescriptorSet::InvalidateBoundCmdBuffers() {
-    core_validation::invalidateCommandBuffers(device_data_, cb_bindings, {HandleToUint64(set_), kVulkanObjectTypeDescriptorSet});
+    core_validation::InvalidateCommandBuffers(device_data_, cb_bindings, {HandleToUint64(set_), kVulkanObjectTypeDescriptorSet});
 }
 // Perform write update in given update struct
 void cvdescriptorset::DescriptorSet::PerformWriteUpdate(const VkWriteDescriptorSet *update) {
@@ -1532,7 +1532,7 @@ bool cvdescriptorset::ValidateUpdateDescriptorSets(const debug_report_data *repo
         if (!set_node) {
             skip |=
                 log_msg(report_data, VK_DEBUG_REPORT_ERROR_BIT_EXT, VK_DEBUG_REPORT_OBJECT_TYPE_DESCRIPTOR_SET_EXT,
-                        HandleToUint64(dest_set), DRAWSTATE_INVALID_DESCRIPTOR_SET,
+                        HandleToUint64(dest_set), kVUID_Core_DrawState_InvalidDescriptorSet,
                         "Cannot call vkUpdateDescriptorSets() on descriptor set 0x%" PRIxLEAST64 " that has not been allocated.",
                         HandleToUint64(dest_set));
         } else {
