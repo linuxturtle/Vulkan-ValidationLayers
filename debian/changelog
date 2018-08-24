@@ -1,0 +1,5 @@
+vulkan-validationlayers (1.1.82.0-1) UNRELEASED; urgency=medium
+
+  * Initial packaging.
+
+ -- Timo Aaltonen <tjaalton@debian.org>  Fri, 24 Aug 2018 21:25:06 +0300
