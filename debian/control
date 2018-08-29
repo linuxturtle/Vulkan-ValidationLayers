@@ -5,6 +5,12 @@ Uploaders: Timo Aaltonen <tjaalton@debian.org>
 Build-Depends: debhelper (>= 11),
  cmake,
  glslang-dev,
+ libvulkan-dev (>= 1.1.82.0),
+ libwayland-dev,
+ libx11-dev,
+ libxrandr-dev,
+ pkg-config,
+ python3,
  spirv-tools,
 Standards-Version: 4.2.0
 Section: libs
