@@ -3,8 +3,8 @@ Author: Dejan Latinovic <Dejan.Latinovic@imgtec.com>
 
 --- a/layers/CMakeLists.txt
 +++ b/layers/CMakeLists.txt
-@@ -211,6 +211,12 @@ if (CMAKE_C_COMPILER_ID MATCHES "Clang")
-         COMPILE_FLAGS "-Wno-unused-const-variable")
+@@ -245,6 +245,12 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+     set_source_files_properties(parameter_validation.cpp PROPERTIES COMPILE_FLAGS "-Wno-unused-const-variable")
  endif()
  
 +if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "mips64")
